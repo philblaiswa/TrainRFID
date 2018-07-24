@@ -573,34 +573,74 @@ namespace SerialIotRelay
         /// <param name="cancellationToken"></param>
         private async Task ReadAsync(CancellationToken cancellationToken)
         {
-            Task<UInt32> loadAsyncTask;
-
-            uint ReadBufferLength = 4;
-
-
             while (EventHandlerForDevice.Current.Device != null)
             {
-                // Don't start any IO if we canceled the task
-                lock (ReadCancelLock)
+                uint size = await ReadSize(cancellationToken);
+                if (size > 0)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    // Cancellation Token will be used so we can stop the task operation explicitly
-                    // The completion function should still be called so that we can properly handle a canceled task
-                    DataReaderObject.InputStreamOptions = InputStreamOptions.Partial;
-                    loadAsyncTask = DataReaderObject.LoadAsync(ReadBufferLength).AsTask(cancellationToken);
-                }
-
-                UInt32 bytesRead = await loadAsyncTask;
-
-                if (bytesRead > 0)
-                {
-                    String temp = DataReaderObject.ReadString(bytesRead);
-                    string text = serialInputBox.Text + temp;
-                    serialInputBox.Text = text;
-                    //NotifyUser(temp, NotifyType.StatusMessage);
+                    string message = await ReadMessage(cancellationToken, size);
+                    if (message.StartsWith("{"))
+                    {
+                        // Send to IoT Hub
+                    }
                 }
             }
+        }
+
+        private async Task<uint> ReadSize(CancellationToken cancellationToken)
+        {
+            Task<UInt32> loadAsyncTask;
+            const uint readBufferLength = 5;
+            // Don't start any IO if we canceled the task
+            lock (ReadCancelLock)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Cancellation Token will be used so we can stop the task operation explicitly
+                // The completion function should still be called so that we can properly handle a canceled task
+                DataReaderObject.InputStreamOptions = InputStreamOptions.Partial;
+                loadAsyncTask = DataReaderObject.LoadAsync(readBufferLength).AsTask(cancellationToken);
+            }
+
+            UInt32 bytesRead = await loadAsyncTask;
+            uint value = 0;
+            if (bytesRead > 0)
+            {
+                String temp = DataReaderObject.ReadString(bytesRead);
+                value = Convert.ToUInt32(temp);
+
+                string text = serialInputBox.Text + "Card read: " + Convert.ToString(value) + " bytes\n";
+                serialInputBox.Text = text;
+            }
+
+            return 0;
+        }
+
+        private async Task<string> ReadMessage(CancellationToken cancellationToken, uint readBufferLength)
+        {
+            Task<UInt32> loadAsyncTask;
+            // Don't start any IO if we canceled the task
+            lock (ReadCancelLock)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Cancellation Token will be used so we can stop the task operation explicitly
+                // The completion function should still be called so that we can properly handle a canceled task
+                DataReaderObject.InputStreamOptions = InputStreamOptions.Partial;
+                loadAsyncTask = DataReaderObject.LoadAsync(readBufferLength).AsTask(cancellationToken);
+            }
+
+            UInt32 bytesRead = await loadAsyncTask;
+            string message = "Error";
+            if (bytesRead > 0)
+            {
+                message = DataReaderObject.ReadString(bytesRead);
+
+                string text = serialInputBox.Text + "Message: " + message;
+                serialInputBox.Text = text;
+            }
+
+            return message;
         }
 
         private void ResetReadCancellationTokenSource()

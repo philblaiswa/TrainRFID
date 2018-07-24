@@ -28,28 +28,35 @@ Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 // Or use this line for a breakout or shield with an I2C connection:
 //Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET);
 
+void printMessage(char* msg)
+{
+  char sizeInfo[20];
+  sprintf(sizeInfo, "%04d\n", strlen(msg) + 1);
+  Serial.print(sizeInfo);
+  Serial.println(msg);
+}
+
 void setup(void) {
   Serial.begin(115200);
-  Serial.println("RFID Reader for Azure IoT is initializing...");
+  //Serial.println("RFID Reader for Azure IoT is initializing...");
 
   nfc.begin();
 
   uint32_t versiondata = nfc.getFirmwareVersion();
   if (!versiondata) {
-    Serial.print("Didn't find PN53x board");
-    Serial.print("Disconnect Arduino and try again");
+    printMessage("Didn't find PN53x board\nDisconnect Arduino and try again");
     while (1); // halt
   }
   
   // Got ok data, print it out!
-  Serial.print("Found chip PN5"); Serial.println((versiondata>>24) & 0xFF, HEX); 
-  Serial.print("Firmware ver. "); Serial.print((versiondata>>16) & 0xFF, DEC); 
-  Serial.print('.'); Serial.println((versiondata>>8) & 0xFF, DEC);
+  //Serial.print("Found chip PN5"); Serial.println((versiondata>>24) & 0xFF, HEX); 
+  //Serial.print("Firmware ver. "); Serial.print((versiondata>>16) & 0xFF, DEC); 
+  //Serial.print('.'); Serial.println((versiondata>>8) & 0xFF, DEC);
   
   // configure board to read RFID tags
   nfc.SAMConfig();
   
-  Serial.println("Waiting for an ISO14443A Card ...");
+  //Serial.println("Waiting for an ISO14443A Card ...");
 }
 
 
@@ -69,27 +76,28 @@ void loop(void) {
     //Serial.print("  UID Length: ");Serial.print(uidLength, DEC);Serial.println(" bytes");
     //Serial.print("  UID Value: ");
     //nfc.PrintHex(uid, uidLength);
-    Serial.print("{ \"uidLength\":");
-    Serial.print(uidLength, DEC);
-    Serial.print(",\"uidValue\":\"");
+
+    char cardMessage[255];
+    sprintf(cardMessage, "{\"uidLength\":%d,\"uidValue\":\"");
     for (uint8_t i = 0; i < uidLength; i++) {
-      Serial.print(uid[i], HEX);
-    }
-    Serial.print("\",\"type\":\"");
-    
+      char uid[50] = "\0";
+      sprintf(uid, "%02X", uid[i]);
+      strcat(cardMessage, uid);
+    }     
+    strcat(cardMessage, "\",\"type\":\"");
     if (uidLength == 4)
     {
-      Serial.print("Mifare Classic");
+      strcat(cardMessage, "Mifare Classic");
     }
-    else if (uidLength == 4)
+    else if (uidLength == 7)
     {
-      Serial.print("Mifare Ultralight");
+      strcat(cardMessage, "Mifare Ultralight");
     }
     else
     {
-      Serial.print("Unknown");
+      strcat(cardMessage, "Unknown");
     }
-    Serial.println("\"}");
+    strcat(cardMessage, "\"}");
     
     // Wait before reading again
     delay(1000);
