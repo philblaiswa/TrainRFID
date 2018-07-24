@@ -4,10 +4,13 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Threading;
+using System.Threading.Tasks;
 using Windows.ApplicationModel;
 using Windows.Devices.Enumeration;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
+using Windows.Storage.Streams;
 using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Automation.Peers;
@@ -41,6 +44,12 @@ namespace SerialIotRelay
         // Has all the devices enumerated by the device watcher?
         private Boolean isAllDevicesEnumerated;
 
+        // Track Read Operation
+        private CancellationTokenSource ReadCancellationTokenSource;
+        private Object ReadCancelLock = new Object();
+
+        DataReader DataReaderObject = null;
+
         public MainPage()
         {
             this.InitializeComponent();
@@ -56,6 +65,15 @@ namespace SerialIotRelay
             watchersSuspended = false;
 
             isAllDevicesEnumerated = false;
+        }
+
+        public void Dispose()
+        {
+            if (ReadCancellationTokenSource != null)
+            {
+                ReadCancellationTokenSource.Dispose();
+                ReadCancellationTokenSource = null;
+            }
         }
 
         protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -412,8 +430,6 @@ namespace SerialIotRelay
         private void SendButton_Click(object sender, RoutedEventArgs e)
         {
             //await AzureIoTHub.SendDeviceToCloudMessageAsync("YardReader", "12345");
-            Frame rootFrame = Window.Current.Content as Frame;
-            rootFrame.Navigate(typeof(DeviceSelectionPage));
         }
 
         /// <summary>
@@ -450,6 +466,9 @@ namespace SerialIotRelay
 
             StatusBlock.Text = strMessage;
 
+            String text = serialInputBox.Text + "\n" + strMessage;
+            serialInputBox.Text = text;
+
             // Raise an event if necessary to enable a screen reader to announce the status update.
             var peer = FrameworkElementAutomationPeer.FromElement(StatusBlock);
             if (peer != null)
@@ -483,6 +502,8 @@ namespace SerialIotRelay
 
                     // Disable connect button if we connected to the device
                     UpdateConnectDisconnectButtonsAndList(!openSuccess);
+
+                    await StartReading();
                 }
             }
         }
@@ -509,6 +530,103 @@ namespace SerialIotRelay
 
             UpdateConnectDisconnectButtonsAndList(true);
         }
+
+        private async Task StartReading()
+        {
+            ResetReadCancellationTokenSource();
+
+            try
+            {
+                DataReaderObject = new DataReader(EventHandlerForDevice.Current.Device.InputStream);
+                await ReadAsync(ReadCancellationTokenSource.Token);
+            }
+            catch (OperationCanceledException /*exception*/)
+            {
+                NotifyReadTaskCanceled();
+            }
+            catch (Exception exception)
+            {
+                MainPage.Current.NotifyUser(exception.Message.ToString(), NotifyType.ErrorMessage);
+            }
+            finally
+            {
+                DataReaderObject.DetachStream();
+                DataReaderObject = null;
+            }
+        }
+
+        /// <summary>
+        /// Notifies the UI that the operation has been cancelled
+        /// </summary>
+        private async void NotifyReadTaskCanceled()
+        {
+            await Dispatcher.RunAsync(CoreDispatcherPriority.Normal,
+                new DispatchedHandler(() =>
+                {
+                    NotifyUser("Read request has been cancelled", NotifyType.StatusMessage);
+                }));
+        }
+
+        /// <summary>
+        /// Read from the input output stream using a task 
+        /// </summary>
+        /// <param name="cancellationToken"></param>
+        private async Task ReadAsync(CancellationToken cancellationToken)
+        {
+            Task<UInt32> loadAsyncTask;
+
+            uint ReadBufferLength = 4;
+
+
+            while (EventHandlerForDevice.Current.Device != null)
+            {
+                // Don't start any IO if we canceled the task
+                lock (ReadCancelLock)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    // Cancellation Token will be used so we can stop the task operation explicitly
+                    // The completion function should still be called so that we can properly handle a canceled task
+                    DataReaderObject.InputStreamOptions = InputStreamOptions.Partial;
+                    loadAsyncTask = DataReaderObject.LoadAsync(ReadBufferLength).AsTask(cancellationToken);
+                }
+
+                UInt32 bytesRead = await loadAsyncTask;
+
+                if (bytesRead > 0)
+                {
+                    String temp = DataReaderObject.ReadString(bytesRead);
+                    string text = serialInputBox.Text + temp;
+                    serialInputBox.Text = text;
+                    //NotifyUser(temp, NotifyType.StatusMessage);
+                }
+            }
+        }
+
+        private void ResetReadCancellationTokenSource()
+        {
+            // Create a new cancellation token source so that can cancel all the tokens again
+            ReadCancellationTokenSource = new CancellationTokenSource();
+
+            // Hook the cancellation callback (called whenever Task.cancel is called)
+            ReadCancellationTokenSource.Token.Register(() => NotifyReadCancelingTask());
+        }
+
+        /// <summary>
+        /// Print a status message saying we are canceling a task and disable all buttons to prevent multiple cancel requests.
+        /// <summary>
+        private async void NotifyReadCancelingTask()
+        {
+            // Setting the dispatcher priority to high allows the UI to handle disabling of all the buttons
+            // before any of the IO completion callbacks get a chance to modify the UI; that way this method
+            // will never get the opportunity to overwrite UI changes made by IO callbacks
+            await Dispatcher.RunAsync(CoreDispatcherPriority.High,
+                new DispatchedHandler(() =>
+                {
+                    NotifyUser("Canceling Read... Please wait...", NotifyType.StatusMessage);
+                }));
+        }
+
     }
 
 

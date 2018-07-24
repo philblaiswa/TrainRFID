@@ -339,7 +339,7 @@ namespace SerialIotRelay
             {
                 if (device != null)
                 {
-                    device.BaudRate = 9600;
+                    device.BaudRate = 115200;
                     device.Parity = SerialParity.None;
                     device.StopBits = SerialStopBitCount.One;
                     device.Handshake = SerialHandshake.None;

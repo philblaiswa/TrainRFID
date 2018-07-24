@@ -35,6 +35,10 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
+                    <StackPanel Margin="0,0,0,10">
+                        <TextBlock Text="Serial Messages" FontSize="28" />
+                        <TextBox Name="serialInputBox" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" Height="300" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
 
