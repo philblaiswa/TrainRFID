@@ -590,10 +590,37 @@ namespace SerialIotRelay
                         }
                         sensorIdInputBox.Text = sensorId;
 
-                        JsonObject json = JsonObject.Parse(message);
-                        string tagId = json.GetNamedString("uidValue");
-                        string iotMsg = await AzureIoTHub.SendDeviceToCloudMessageAsync(sensorId, tagId);
-                        NotifyUser("Sent to IoT Hub: " + iotMsg, NotifyType.StatusMessage);
+                        bool needsRecovery = false;
+                        try
+                        {
+                            JsonObject json = JsonObject.Parse(message);
+                            string tagId = json.GetNamedString("uidValue");
+                            string iotMsg = await AzureIoTHub.SendDeviceToCloudMessageAsync(sensorId, tagId);
+                            NotifyUser("Sent to IoT Hub: " + iotMsg, NotifyType.StatusMessage);
+                        }
+                        catch(Exception e)
+                        {
+                            NotifyUser("*** EXCEPTION *** " + e.Message.ToString(), NotifyType.ErrorMessage);
+                            needsRecovery = true;
+                        }
+
+                        if (needsRecovery)
+                        {
+                            NotifyUser("Scan RFID tags again", NotifyType.StatusMessage);
+                            while(needsRecovery)
+                            {
+                                string bit = await ReadMessage(cancellationToken, 1);
+                                if (bit.Equals("}"))
+                                {
+                                    NotifyUser("Yeah... RECOVERED!", NotifyType.StatusMessage);
+                                    bit = await ReadMessage(cancellationToken, 2);
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        NotifyUser("Message from Arduino: " + message, NotifyType.StatusMessage);
                     }
                 }
             }
