@@ -28,10 +28,10 @@ Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 // Or use this line for a breakout or shield with an I2C connection:
 //Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET);
 
-void printMessage(char* msg)
+void printMessage(char* msg, int len)
 {
   char sizeInfo[20];
-  sprintf(sizeInfo, "%04d\n", strlen(msg) + 1);
+  sprintf(sizeInfo, "%04d\n", len);
   Serial.print(sizeInfo);
   Serial.println(msg);
 }
@@ -44,7 +44,8 @@ void setup(void) {
 
   uint32_t versiondata = nfc.getFirmwareVersion();
   if (!versiondata) {
-    printMessage("Didn't find PN53x board\nDisconnect Arduino and try again");
+    char msg[] = "Didn't find PN53x board\nDisconnect Arduino and try again";
+    printMessage(msg, strlen(msg));
     while (1); // halt
   }
   
@@ -70,6 +71,9 @@ void loop(void) {
   // if the uid is 4 bytes (Mifare Classic) or 7 bytes (Mifare Ultralight)
   success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
   
+  //Serial.print("Read passive tag: ");
+  //Serial.println(success);
+  
   if (success) {
     // Display some basic information about the card
     //Serial.println("Found an ISO14443A card");
@@ -78,11 +82,11 @@ void loop(void) {
     //nfc.PrintHex(uid, uidLength);
 
     char cardMessage[255];
-    sprintf(cardMessage, "{\"uidLength\":%d,\"uidValue\":\"");
+    sprintf(cardMessage, "{\"uidLength\":%d,\"uidValue\":\"", uidLength);
     for (uint8_t i = 0; i < uidLength; i++) {
-      char uid[50] = "\0";
-      sprintf(uid, "%02X", uid[i]);
-      strcat(cardMessage, uid);
+      char uidStr[50] = "\0";
+      sprintf(uidStr, "%02X", uid[i]);
+      strcat(cardMessage, uidStr);
     }     
     strcat(cardMessage, "\",\"type\":\"");
     if (uidLength == 4)
@@ -98,9 +102,11 @@ void loop(void) {
       strcat(cardMessage, "Unknown");
     }
     strcat(cardMessage, "\"}");
+
+    printMessage(cardMessage, strlen(cardMessage) + 2);
     
     // Wait before reading again
-    delay(1000);
+    delay(250);
 
     /*
     if (uidLength == 4)

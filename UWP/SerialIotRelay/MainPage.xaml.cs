@@ -4,9 +4,11 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.ApplicationModel;
+using Windows.Data.Json;
 using Windows.Devices.Enumeration;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
@@ -466,8 +468,7 @@ namespace SerialIotRelay
 
             StatusBlock.Text = strMessage;
 
-            String text = serialInputBox.Text + "\n" + strMessage;
-            serialInputBox.Text = text;
+            serialInputBox.Text += "\n" + strMessage;
 
             // Raise an event if necessary to enable a screen reader to announce the status update.
             var peer = FrameworkElementAutomationPeer.FromElement(StatusBlock);
@@ -581,7 +582,18 @@ namespace SerialIotRelay
                     string message = await ReadMessage(cancellationToken, size);
                     if (message.StartsWith("{"))
                     {
-                        // Send to IoT Hub
+                        string sensorId = sensorIdInputBox.Text;
+                        sensorId = Regex.Replace(sensorId, @"\s+", "");
+                        if (String.IsNullOrEmpty(sensorId))
+                        {
+                            sensorId = "UnidentifiedSensor";
+                        }
+                        sensorIdInputBox.Text = sensorId;
+
+                        JsonObject json = JsonObject.Parse(message);
+                        string tagId = json.GetNamedString("uidValue");
+                        string iotMsg = await AzureIoTHub.SendDeviceToCloudMessageAsync(sensorId, tagId);
+                        NotifyUser("Sent to IoT Hub: " + iotMsg, NotifyType.StatusMessage);
                     }
                 }
             }
@@ -609,11 +621,10 @@ namespace SerialIotRelay
                 String temp = DataReaderObject.ReadString(bytesRead);
                 value = Convert.ToUInt32(temp);
 
-                string text = serialInputBox.Text + "Card read: " + Convert.ToString(value) + " bytes\n";
-                serialInputBox.Text = text;
+                UpdateStatus("Card read: " + Convert.ToString(value) + " bytes\n", NotifyType.StatusMessage);
             }
 
-            return 0;
+            return value;
         }
 
         private async Task<string> ReadMessage(CancellationToken cancellationToken, uint readBufferLength)
@@ -636,8 +647,7 @@ namespace SerialIotRelay
             {
                 message = DataReaderObject.ReadString(bytesRead);
 
-                string text = serialInputBox.Text + "Message: " + message;
-                serialInputBox.Text = text;
+                NotifyUser("Message from sensor: " + message, NotifyType.StatusMessage);
             }
 
             return message;
@@ -667,6 +677,22 @@ namespace SerialIotRelay
                 }));
         }
 
+        private void serialInputBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            var grid = (Grid)VisualTreeHelper.GetChild(serialInputBox, 0);
+            for (var i = 0; i <= VisualTreeHelper.GetChildrenCount(grid) - 1; i++)
+            {
+                object obj = VisualTreeHelper.GetChild(grid, i);
+                if (!(obj is ScrollViewer)) continue;
+                ((ScrollViewer)obj).ChangeView(0.0f, ((ScrollViewer)obj).ExtentHeight, 1.0f);
+                break;
+            }
+        }
+
+        private void ButtonClearOutput_Click(object sender, RoutedEventArgs e)
+        {
+            serialInputBox.Text = "";
+        }
     }
 
 
